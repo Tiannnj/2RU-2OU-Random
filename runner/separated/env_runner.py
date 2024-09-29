@@ -20,102 +20,25 @@ class EnvRunner(Runner):
         super(EnvRunner, self).__init__(config)
 
     def run(self):
-        self.warmup()
         start = time.time()
         self.num_env_steps = 10000
         self.episode_length = 100
         episodes = int(self.num_env_steps) // self.episode_length // self.n_rollout_threads
 
         for episode in range(episodes):
-            print('********episode********', episode)
-            self.warmup()
-            if self.use_linear_lr_decay:
-                for agent_id in range(self.num_agents):
-                    self.trainer[agent_id].policy.lr_decay(episode, episodes)
-
-            for step in range(self.episode_length):
-                # Sample actions
-                (
-                    values,
-                    actions,
-                    action_log_probs,
-                    rnn_states,
-                    rnn_states_critic,
-                    actions_env,
-                ) = self.collect(step)
-
-                # Observe reward and next obs
-                # print('******step******', step)
-                obs, rewards, dones = self.envs.step(actions_env)
-
-
-                data = (
-                    obs,
-                    rewards,
-                    dones,
-                    values,
-                    actions,
-                    action_log_probs,
-                    rnn_states,
-                    rnn_states_critic,
-                )
-
-                # insert data into buffer
-                self.insert(data)
-
-            # compute return and update network
-            self.compute()
-            train_infos = self.train()
-
-            # post process
-            total_num_steps = (episode + 1) * self.episode_length * self.n_rollout_threads
-
-            # save model
-            if episode % self.save_interval == 0 or episode == episodes - 1:
-                self.save()
-
-            # log information
-            if episode % self.log_interval == 0:
-                end = time.time()
-                print(
-                    "\n Scenario {} Algo {} Exp {} updates {}/{} episodes, total num timesteps {}/{}, FPS {}.\n".format(
-                        self.all_args.scenario_name,
-                        self.algorithm_name,
-                        self.experiment_name,
-                        episode,
-                        episodes,
-                        total_num_steps,
-                        self.num_env_steps,
-                        int(total_num_steps / (end - start)),
-                    )
-                )
-
-                if self.env_name == "MyEnv":
-                    for agent_id in range(self.num_agents):
-                        # idv_rews = []
-                        # for info in infos:
-                        #     if "individual_reward" in info[agent_id].keys():
-                        #         idv_rews.append(info[agent_id]["individual_reward"])
-                        # train_infos[agent_id].update({"individual_rewards": np.mean(idv_rews)})
-                        train_infos[agent_id].update(
-                            {
-                                "average_episode_rewards": np.mean(self.buffer[agent_id].rewards)
-                                * self.episode_length
-                            }
-                        )
-                self.log_train(train_infos, total_num_steps)
-
             # eval
             if episode % self.eval_interval == 0 and self.use_eval:
                 print('********eval*********')
-                self.eval(episode, total_num_steps)
+                self.eval(episode, 0)
 
     def warmup(self):
         # reset env
         D_array = np.random.uniform(0.1, 0.6, 100)
         C_array = np.random.uniform(0.1, 0.6, 100)
         L_array = np.random.uniform(20, 200, 100)
-        obs = self.envs.reset()  # shape = [env_num, agent_num, obs_dim]
+        self.v_info_all = {_: [_ * 50 + 10, 0, 0, random.uniform(0.1, 0.6), random.uniform(0.1, 0.6), random.uniform(20, 200)] for
+                _ in range(1000)}
+        obs = self.envs.reset(0)  # shape = [env_num, agent_num, obs_dim]
         share_obs = []
         for o in obs:
             share_obs.append(list(chain(*o)))
@@ -245,7 +168,7 @@ class EnvRunner(Runner):
     @torch.no_grad()
     def eval(self, episode, total_num_steps):
         eval_episode_rewards = []
-        eval_obs = self.eval_envs.reset()
+        eval_obs = self.eval_envs.reset(0)
 
         eval_rnn_states = np.zeros(
             (
@@ -300,7 +223,7 @@ class EnvRunner(Runner):
                 eval_actions_env.append(eval_one_hot_action_env)
 
             # Observe reward and next obs
-            eval_obs, eval_rewards, eval_dones = self.eval_envs.step(eval_actions_env)
+            eval_obs, eval_rewards, eval_dones = self.eval_envs.step(eval_actions_env, eval_step)
             record_each_step = list(eval_actions_env) + list(eval_obs) + list(eval_rewards) + list(eval_rewards[0][0])
             record_all_steps = record_all_steps + record_each_step
             # save
@@ -397,7 +320,8 @@ class EnvRunner(Runner):
                     actions_env.append(one_hot_action_env)
 
                 # Obser reward and next obs
-                obs, rewards, dones, infos = self.envs.step(actions_env)
+                print('actions_env', actions_env)
+                obs, rewards, dones, infos = self.envs.step(actions_env, step)
                 episode_rewards.append(rewards)
 
                 rnn_states[dones == True] = np.zeros(

@@ -41,6 +41,9 @@ class vorenv(gym.Env):
         # init vehicles in each time step, set the vehicles run in a 500m road, the speed of each vehicle is set as 10m/s, conencted with D, C, L
         self.n_v = 10
         self.v_info = {_: [ _ * 50 + 10, 0, 0, random.uniform(0.1,0.6), random.uniform(0.1,0.6), random.uniform(20,200)] for _ in range(self.n_v)}
+        self.v_info_all = {
+            _: [_ * 50 + 10, 0, 0, random.uniform(0.1, 0.6), random.uniform(0.1, 0.6), random.uniform(20, 200)] for
+            _ in range(1000)}
 
         # init OU in each time step, OU can observe itself's location, the vehicles info in it range, the task number it has received, number of tasks assigned to RU, OU service fairness
         self.n_o_agents = 2
@@ -188,7 +191,7 @@ class vorenv(gym.Env):
         return inital_bos
 
 
-    def Mahhv_reset(self):
+    def Mahhv_reset(self, x):
         # UAV initial state, including
         # Vehicles' locations, task information;
         # OUs' locations, total bandwidth for receiving and offloading tasks(evenly allocation), OU service fairness
@@ -205,6 +208,7 @@ class vorenv(gym.Env):
         self.v_info = {
             _: [_ * 50 + 10, 0, 0, random.uniform(0.1, 0.6), random.uniform(0.1, 0.6), random.uniform(20, 200)] for _ in
             range(self.n_v)}
+        self.v_info = {k: v for k, v in self.v_info_all.items() if ( 10 * x <= k < 10 * (x + 1))}
 
 #        print('self.v_info', self.v_info)
 
@@ -267,11 +271,11 @@ class vorenv(gym.Env):
     """
     new actions that only performed by RUs
     """
-    def Mahhv_step(self, agents_action):
+    def Mahhv_step(self, agents_action, v_info_index):
         "agents_action in this situation has 4 arrays for 4 RUs"
         for random_i in range(0, self.n_r_agents):
             for random_j in range(0, 4):
-                agents_action[random_i][random_j] = np.random.randint(0,2)
+                agents_action[random_i][random_j] = np.random.randint(0, 2)
         rewards = [self._step_cost for _ in range(self.n_agents)]
         # remain ddl on each OU
         ou_remain_ddl = [[0] * 5, [0] * 5]
@@ -397,7 +401,6 @@ class vorenv(gym.Env):
             for r in range(0, 2):
                 self.o_tra[o_agent_num][r] = num_o_tra[r]
 
-
         # take actions for RU agents  ru_action = [0,1]
         # array to save the ddl for each ru
         r_ddl = [0, 0, 0, 0]
@@ -468,7 +471,8 @@ class vorenv(gym.Env):
                     rm_total_delay = delay_r2m + delay_m_compute
                     # Generate the final ddl information
                     # np.array(list(self.r_m_new()))[v, 5] = np.array(list(self.o_v_new.values()))[v, 5] - rm_total_delay
-                    r_ddl[r_agent_num] = r_ddl[r_agent_num] +  r_pre_state[3 + v * 6 + 5] - rm_total_delay
+                    revised_ddl = max(r_pre_state[3 + v * 6 + 5] - rm_total_delay, [0])
+                    r_ddl[r_agent_num] = r_ddl[r_agent_num] +  np.array(revised_ddl)
 
             # The fairness in the RU observation state for receiving has to be updated
             self.r_received[r_agent_num] = new_num_r_receive
@@ -478,9 +482,10 @@ class vorenv(gym.Env):
             self.r_assign[r_agent_num] = num_r_rtr[r_agent_num]
             # calculate the reward for each OU
 
-        x = 0
-        y = 0
+
         for agent_o in range(0, self.n_o_agents):
+            x = 0
+            y = 0
             for i in self.o_receive:
                 x = x + i ** 2
             f_o_rec = (sum(self.o_receive)) ** 2 / (2 * x + 0.0000001)
@@ -495,11 +500,15 @@ class vorenv(gym.Env):
         z = 0
         f_r_rtr = [0 for _ in range(self.n_r_agents)]
         for agent_r in range(0, self.n_r_agents):
+            z = 0
             for k in self.r_assign[agent_r]:
                 z = z + k ** 2
             f_r_rtr[agent_r] = (sum(self.r_assign[agent_r])) ** 2 / (2 * z + 0.0000001)
             # rewards_ru[agent_r] = float(r_ddl[agent_r] * rewards_ou[agent_r//1] * f_r_rtr )
-        rewards_ru = sum(r_ddl) * np.prod(rewards_ou) * np.prod(f_r_rtr)
+        rewards_ru = sum(r_ddl) * (np.prod(rewards_ou) ** 2) * (np.prod(f_r_rtr) ** 2)
+        # print('/', rewards_ru, sum(r_ddl))
+        # print('//', self.o_tra, '\n', rewards_ou, '\n', np.prod(rewards_ou))
+        # print('///', self.r_assign, '\n', f_r_rtr, '\n', np.prod(f_r_rtr))
         rewards_ru_average = [rewards_ru] * self.n_r_agents
         # print('rewards_ru', rewards_ru)
 
@@ -509,7 +518,7 @@ class vorenv(gym.Env):
         # Save now o_tra information
         num_o_tra_total = self.o_tra
         # Adjust new environmental information
-        self.Mahhv_reset()
+        self.Mahhv_reset(v_info_index)
 
         for o in range(0, self.n_o_agents):
             self.o_receive[o] = num_o_receive[o]
@@ -518,6 +527,7 @@ class vorenv(gym.Env):
         for r in range(0, self.n_r_agents):
             self.r_received[r] = num_r_rec[r]
             self.r_assign[r] = num_r_rtr[r]
+        print(rewards)
         return self.Mahhv_get_agent_obs(), rewards, self._agent_dones
 
     def seed(self, n):
