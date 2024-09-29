@@ -269,6 +269,9 @@ class vorenv(gym.Env):
     """
     def Mahhv_step(self, agents_action):
         "agents_action in this situation has 4 arrays for 4 RUs"
+        for random_i in range(0, self.n_r_agents):
+            for random_j in range(0, 4):
+                agents_action[random_i][random_j] = np.random.randint(0,2)
         rewards = [self._step_cost for _ in range(self.n_agents)]
         # remain ddl on each OU
         ou_remain_ddl = [[0] * 5, [0] * 5]
@@ -394,6 +397,7 @@ class vorenv(gym.Env):
             for r in range(0, 2):
                 self.o_tra[o_agent_num][r] = num_o_tra[r]
 
+
         # take actions for RU agents  ru_action = [0,1]
         # array to save the ddl for each ru
         r_ddl = [0, 0, 0, 0]
@@ -460,13 +464,11 @@ class vorenv(gym.Env):
                     # calculate the retransmit delay
                     delay_r2m = ((r_pre_state[3 + v * 6 + 3] * 8) / rate_r2m) * 1000
                     # calculate the compute delay GHz/GHz
-                    delay_m_compute =( r_pre_state[3 + v * 3 + 4] / self.m_cpu[int(r_agent_num * 2 + r_action[1 + v])]) * 1000
+                    delay_m_compute =( r_pre_state[3 + v * 6 + 4] / self.m_cpu[int(r_agent_num * 2 + r_action[1 + v])]) * 1000
                     rm_total_delay = delay_r2m + delay_m_compute
                     # Generate the final ddl information
                     # np.array(list(self.r_m_new()))[v, 5] = np.array(list(self.o_v_new.values()))[v, 5] - rm_total_delay
-                    r_ddl[r_agent_num] = r_ddl[r_agent_num] +  r_pre_state[3 + v * 3 + 5] - rm_total_delay
-
-
+                    r_ddl[r_agent_num] = r_ddl[r_agent_num] +  r_pre_state[3 + v * 6 + 5] - rm_total_delay
 
             # The fairness in the RU observation state for receiving has to be updated
             self.r_received[r_agent_num] = new_num_r_receive
@@ -491,7 +493,6 @@ class vorenv(gym.Env):
 
         # calculate the reward for each RU
         z = 0
-        print(r_ddl)
         f_r_rtr = [0 for _ in range(self.n_r_agents)]
         for agent_r in range(0, self.n_r_agents):
             for k in self.r_assign[agent_r]:

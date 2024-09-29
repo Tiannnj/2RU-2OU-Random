@@ -451,7 +451,7 @@ def get_config():
     parser.add_argument(
         "--eval_interval",
         type=int,
-        default=10,
+        default=1,
         help="time duration between contiunous twice evaluation progress.",
     )
     parser.add_argument(

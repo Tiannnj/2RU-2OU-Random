@@ -22,7 +22,7 @@ class EnvRunner(Runner):
     def run(self):
         self.warmup()
         start = time.time()
-        self.num_env_steps = 10000000
+        self.num_env_steps = 10000
         self.episode_length = 100
         episodes = int(self.num_env_steps) // self.episode_length // self.n_rollout_threads
 
